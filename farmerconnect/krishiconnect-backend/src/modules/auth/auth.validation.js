@@ -7,6 +7,7 @@ const registerSchema = Joi.object({
     .messages({
       'string.pattern.base': 'Invalid Indian phone number',
     }),
+  email: Joi.string().email().lowercase().trim().allow('').optional(),
   name: Joi.string().required().trim().max(100),
   password: Joi.string().min(6).required(),
   location: Joi.object({
@@ -23,10 +24,14 @@ const verifyOTPSchema = Joi.object({
   otp: Joi.string().length(6).required(),
 });
 
+const verifyRegistrationOTPSchema = Joi.object({
+  otpId: Joi.string().required(),
+  otp: Joi.string().length(6).required(),
+});
+
 const loginSchema = Joi.object({
-  phoneNumber: Joi.string()
-    .pattern(/^[6-9]\d{9}$/)
-    .required(),
+  phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow('').optional(),
+  email: Joi.string().email().lowercase().trim().allow('').optional(),
   password: Joi.string().required(),
 });
 
@@ -46,6 +51,20 @@ const resetPasswordSchema = Joi.object({
     .required(),
   otp: Joi.string().length(6).required(),
   newPassword: Joi.string().min(6).required(),
+});
+
+const forgotPasswordEmailSchema = Joi.object({
+  email: Joi.string().email().required().lowercase().trim(),
+});
+
+const resetPasswordWithOTPSchema = Joi.object({
+  otpId: Joi.string().required(),
+  otp: Joi.string().length(6).required(),
+  newPassword: Joi.string().min(6).max(50).required(),
+});
+
+const resendOTPSchema = Joi.object({
+  otpId: Joi.string().required(),
 });
 
 const validate = (schema) => (req, res, next) => {
@@ -70,9 +89,13 @@ const validate = (schema) => (req, res, next) => {
 module.exports = {
   registerSchema,
   verifyOTPSchema,
+  verifyRegistrationOTPSchema,
   loginSchema,
   refreshTokenSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  forgotPasswordEmailSchema,
+  resetPasswordWithOTPSchema,
+  resendOTPSchema,
   validate,
 };

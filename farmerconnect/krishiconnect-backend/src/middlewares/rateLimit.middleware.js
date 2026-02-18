@@ -1,8 +1,11 @@
+// 
 const rateLimit = require('express-rate-limit');
 
+const isTesting = process.env.NODE_ENV === 'development';
+
 const generalLimiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,
+  windowMs: 15 * 60 * 1000,
+  max: isTesting ? 10000 : 100,
   message: { success: false, message: 'Too many requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -10,15 +13,31 @@ const generalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: isTesting ? 1000 : 5,
   message: { success: false, message: 'Too many authentication attempts' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isTesting ? 1000 : 5,
+  message: { success: false, message: 'Too many registration attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isTesting ? 1000 : 3,
+  message: { success: false, message: 'Too many password reset requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 10,
+  max: isTesting ? 500 : 10,
   message: { success: false, message: 'Upload limit exceeded' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -27,5 +46,7 @@ const uploadLimiter = rateLimit({
 module.exports = {
   generalLimiter,
   authLimiter,
+  registerLimiter,
+  forgotPasswordLimiter,
   uploadLimiter,
 };

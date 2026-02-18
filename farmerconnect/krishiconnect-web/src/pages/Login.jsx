@@ -7,10 +7,22 @@ import toast from 'react-hot-toast';
 import { authService } from '../services/auth.service';
 import { useAuthStore } from '../store/authStore';
 
-const schema = z.object({
-  phoneNumber: z.string().regex(/^[6-9]\d{9}$/, 'Invalid phone number'),
-  password: z.string().min(1, 'Password required'),
-});
+const schema = z
+  .object({
+    phoneNumber: z.string().optional(),
+    email: z.union([z.string().email('Invalid email'), z.literal('')]).optional(),
+    password: z.string().min(1, 'Password required'),
+  })
+  .refine(
+    (data) => {
+      const phone = data.phoneNumber?.trim();
+      const emailVal = data.email?.trim();
+      const validPhone = phone && /^[6-9]\d{9}$/.test(phone);
+      const validEmail = emailVal && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal);
+      return validPhone || validEmail;
+    },
+    { message: 'Enter phone number or email', path: ['phoneNumber'] }
+  );
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
@@ -27,16 +39,24 @@ export default function Login() {
     watch,
   } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: { phoneNumber: '', password: '' },
+    defaultValues: { phoneNumber: '', email: '', password: '' },
   });
 
   const phoneNumber = watch('phoneNumber');
+  const email = watch('email');
   const password = watch('password');
 
   const onSubmit = async (data) => {
+    const payload = { password: data.password };
+    if (data.phoneNumber?.trim() && /^[6-9]\d{9}$/.test(data.phoneNumber.trim())) {
+      payload.phoneNumber = data.phoneNumber.trim();
+    }
+    if (data.email?.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim())) {
+      payload.email = data.email.trim();
+    }
     setLoading(true);
     try {
-      const res = await authService.login(data);
+      const res = await authService.login(payload);
       const { user, tokens } = res.data.data;
       setAuth(user, tokens.accessToken, tokens.refreshToken);
       toast.success('🎉 Login successful!');
@@ -89,7 +109,7 @@ export default function Login() {
               <div className="space-y-2 animate-slideInUp animation-delay-100">
                 <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
                   <span className="text-lg">📱</span>
-                  Phone Number
+                  Phone Number <span className="text-slate-500 font-normal">(or use email below)</span>
                 </label>
                 <div className="relative group">
                   <div className={`absolute inset-0 bg-gradient-to-r from-emerald-400 to-green-400 rounded-xl blur-sm opacity-0 group-hover:opacity-75 transition-all duration-300 group-focus-within:opacity-100`} />
@@ -107,7 +127,7 @@ export default function Login() {
                         : 'border-slate-200 hover:border-slate-300'
                     }`}
                   />
-                  {phoneNumber && !errors.phoneNumber && (
+                  {phoneNumber && !errors.phoneNumber && /^[6-9]\d{9}$/.test(phoneNumber) && (
                     <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-green-500">
                       <svg className="w-5 h-5 animate-bounce" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
@@ -119,6 +139,44 @@ export default function Login() {
                   <p className="text-red-500 text-sm font-medium flex items-center gap-1 animate-slideIn">
                     <span>⚠️</span>
                     {errors.phoneNumber.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Email Field */}
+              <div className="space-y-2 animate-slideInUp animation-delay-150">
+                <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <span className="text-lg">📧</span>
+                  Email <span className="text-slate-500 font-normal">(or use phone above)</span>
+                </label>
+                <div className="relative group">
+                  <div className={`absolute inset-0 bg-gradient-to-r from-emerald-400 to-green-400 rounded-xl blur-sm opacity-0 group-hover:opacity-75 transition-all duration-300 group-focus-within:opacity-100`} />
+                  <input
+                    {...register('email')}
+                    type="email"
+                    placeholder="you@example.com"
+                    onFocus={() => setFocusedField('email')}
+                    onBlur={() => setFocusedField(null)}
+                    className={`relative w-full px-4 py-3 bg-white border-2 rounded-xl font-medium transition-all duration-300 outline-none ${
+                      errors.email
+                        ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-200'
+                        : focusedField === 'email'
+                        ? 'border-emerald-500 focus:ring-2 focus:ring-emerald-200'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  />
+                  {email && !errors.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-green-500">
+                      <svg className="w-5 h-5 animate-bounce" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                {errors.email && (
+                  <p className="text-red-500 text-sm font-medium flex items-center gap-1 animate-slideIn">
+                    <span>⚠️</span>
+                    {errors.email.message}
                   </p>
                 )}
               </div>
@@ -184,12 +242,12 @@ export default function Login() {
                     Remember me
                   </span>
                 </label>
-                <a
-                  href="#forgot"
+                <Link
+                  to="/forgot-password"
                   className="text-sm font-medium text-emerald-600 hover:text-emerald-700 transition-colors duration-200 hover:underline"
                 >
                   Forgot password?
-                </a>
+                </Link>
               </div>
 
               {/* Submit Button */}
@@ -275,7 +333,7 @@ export default function Login() {
           <p className="text-sm text-blue-900 flex items-start gap-2">
             <span className="text-lg mt-0.5">💡</span>
             <span>
-              Demo: Use <strong>9876543210</strong> and any password to test the login flow
+              Demo: Use <strong>9876543210</strong> or your <strong>email</strong> with password to login
             </span>
           </p>
         </div>

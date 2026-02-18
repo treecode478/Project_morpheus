@@ -9,6 +9,7 @@ import { useAuthStore } from '../store/authStore';
 
 const step1Schema = z.object({
   phoneNumber: z.string().regex(/^[6-9]\d{9}$/, 'Invalid phone number'),
+  email: z.union([z.string().email('Invalid email'), z.literal('')]).optional(),
   name: z.string().min(2, 'Name must be at least 2 characters'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   confirmPassword: z.string().min(6, 'Confirm password required'),
@@ -37,6 +38,8 @@ const indianStates = [
 export default function Register() {
   const [step, setStep] = useState(1);
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [email, setEmail] = useState('');
+  const [otpId, setOtpId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0);
   const [canResendOtp, setCanResendOtp] = useState(false);
@@ -62,6 +65,7 @@ export default function Register() {
     resolver: zodResolver(step1Schema),
     defaultValues: {
       phoneNumber: '',
+      email: '',
       name: '',
       password: '',
       confirmPassword: '',
@@ -105,14 +109,22 @@ export default function Register() {
   const onStep1 = async (data) => {
     setLoading(true);
     try {
-      // Create registration data without confirmPassword
       const { confirmPassword, ...registrationData } = data;
-      await authService.register(registrationData);
+      const res = await authService.register(registrationData);
+      const result = res.data?.data ?? res.data;
       setPhoneNumber(data.phoneNumber);
       setOtpTimer(60);
       setCanResendOtp(false);
+      setOtpId(result.otpId || null);
+      if (result.email) {
+        setEmail(result.email);
+        toast.success('✉️ OTP sent to your email!');
+      } else {
+        setEmail('');
+        setOtpId(null);
+        toast.success('✉️ OTP sent to your phone!');
+      }
       setStep(2);
-      toast.success('✉️ OTP sent to your phone!');
     } catch (err) {
       toast.error(err.response?.data?.message || '❌ Registration failed');
     } finally {
@@ -123,8 +135,14 @@ export default function Register() {
   const onStep2 = async (data) => {
     setLoading(true);
     try {
-      const res = await authService.verifyOTP({ phoneNumber, otp: data.otp });
-      const { user, tokens } = res.data.data;
+      let res;
+      if (otpId) {
+        res = await authService.verifyRegistrationOTP({ otpId, otp: data.otp });
+      } else {
+        res = await authService.verifyOTP({ phoneNumber, otp: data.otp });
+      }
+      const payload = res.data?.data ?? res.data;
+      const { user, tokens } = payload;
       setAuth(user, tokens.accessToken, tokens.refreshToken);
       toast.success('🎉 Registration successful!');
       navigate('/feed');
@@ -137,13 +155,20 @@ export default function Register() {
 
   const handleResendOtp = async () => {
     try {
-      const { confirmPassword, ...registrationData } = step1Form.getValues();
-      await authService.register(registrationData);
-      setOtpTimer(60);
-      setCanResendOtp(false);
-      toast.success('✉️ OTP resent successfully!');
+      if (otpId) {
+        await authService.resendOTP({ otpId });
+        setOtpTimer(60);
+        setCanResendOtp(false);
+        toast.success('✉️ OTP resent to your email!');
+      } else {
+        const { confirmPassword, ...registrationData } = step1Form.getValues();
+        await authService.register(registrationData);
+        setOtpTimer(60);
+        setCanResendOtp(false);
+        toast.success('✉️ OTP resent successfully!');
+      }
     } catch (err) {
-      toast.error('Failed to resend OTP');
+      toast.error(err.response?.data?.message || 'Failed to resend OTP');
     }
   };
 
@@ -260,6 +285,37 @@ export default function Register() {
                     <p className="text-red-500 text-sm font-medium flex items-center gap-1 animate-slideIn">
                       <span>⚠️</span>
                       {step1Form.formState.errors.phoneNumber.message}
+                    </p>
+                  )}
+                </div>
+
+                {/* Email (optional – OTP sent by email when provided) */}
+                <div className="space-y-2 animate-slideInUp animation-delay-150">
+                  <label className="block text-sm font-semibold text-slate-700 flex items-center gap-2">
+                    <span className="text-lg">📧</span>
+                    Email <span className="text-slate-500 font-normal">(optional – get OTP by email)</span>
+                  </label>
+                  <div className="relative group">
+                    <div className={`absolute inset-0 bg-gradient-to-r from-emerald-400 to-green-400 rounded-xl blur-sm opacity-0 group-hover:opacity-75 transition-all duration-300 group-focus-within:opacity-100`} />
+                    <input
+                      {...step1Form.register('email')}
+                      type="email"
+                      placeholder="you@example.com"
+                      onFocus={() => setFocusedField('email')}
+                      onBlur={() => setFocusedField(null)}
+                      className={`relative w-full px-4 py-3 bg-white border-2 rounded-xl font-medium transition-all duration-300 outline-none ${
+                        step1Form.formState.errors.email
+                          ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-200'
+                          : focusedField === 'email'
+                          ? 'border-emerald-500 focus:ring-2 focus:ring-emerald-200'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    />
+                  </div>
+                  {step1Form.formState.errors.email && (
+                    <p className="text-red-500 text-sm font-medium flex items-center gap-1 animate-slideIn">
+                      <span>⚠️</span>
+                      {step1Form.formState.errors.email.message}
                     </p>
                   )}
                 </div>
@@ -536,17 +592,17 @@ export default function Register() {
             ) : (
               /* Step 2: OTP Verification */
               <form onSubmit={step2Form.handleSubmit(onStep2)} className="space-y-6">
-                {/* Phone Display */}
+                {/* OTP sent display */}
                 <div className="text-center space-y-2 animate-slideInUp animation-delay-100">
                   <p className="text-slate-700">
-                    OTP sent to <span className="font-bold text-emerald-600">{phoneNumber}</span>
+                    OTP sent to <span className="font-bold text-emerald-600">{email || phoneNumber}</span>
                   </p>
                   <button
                     type="button"
-                    onClick={() => setStep(1)}
+                    onClick={() => { setStep(1); setOtpId(null); setEmail(''); }}
                     className="text-sm text-slate-600 hover:text-emerald-600 transition-colors duration-200 hover:underline"
                   >
-                    Change phone number
+                    Change {email ? 'email or phone' : 'phone number'}
                   </button>
                 </div>
 

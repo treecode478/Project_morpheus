@@ -145,6 +145,16 @@ const userSchema = new mongoose.Schema(
       },
     ],
     lastLogin: Date,
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verificationStatus: {
+      type: String,
+      enum: ['unverified', 'verified', 'suspended'],
+      default: 'unverified',
+    },
+    lastPasswordChangeAt: Date,
     isActive: {
       type: Boolean,
       default: true,

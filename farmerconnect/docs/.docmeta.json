@@ -1,0 +1,13 @@
+{
+  "docsVersion": "1.0.1",
+  "generatedAt": "2026-02-18T10:08:34.654Z",
+  "sourceHash": "b014b4f3757e342eaf637caed641878da70000f565b6587f3fa93b1461c1f64c",
+  "backend": {
+    "name": "krishiconnect-backend",
+    "version": "1.0.0"
+  },
+  "web": {
+    "name": "krishiconnect-web",
+    "version": "1.0.0"
+  }
+}

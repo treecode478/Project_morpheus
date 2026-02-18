@@ -5,6 +5,7 @@ const sendOTP = require('../../utils/sendOTP.js');
 const ApiError = require('../../utils/ApiError');
 const { OTP_EXPIRY_SECONDS, OTP_MAX_ATTEMPTS } = require('../../config/constants');
 const { getRedis } = require('../../config/redis');
+const otpService = require('../../services/otpService');
 
 // In-memory fallback for development when Redis unavailable
 const memoryStore = new Map();
@@ -58,15 +59,51 @@ class AuthService {
   }
 
   async register(userData) {
-    const { phoneNumber, password, name, location } = userData;
+    const { phoneNumber, email, password, name, location } = userData;
+    const normalizedEmail = email?.trim().toLowerCase() || null;
 
-    const existingUser = await User.findOne({ phoneNumber });
-    if (existingUser) {
+    const existingByPhone = await User.findOne({ phoneNumber });
+    if (existingByPhone) {
       throw new ApiError(409, 'Phone number already registered');
     }
+    if (normalizedEmail) {
+      const existingByEmail = await User.findOne({ email: normalizedEmail });
+      if (existingByEmail) {
+        throw new ApiError(409, 'Email already registered');
+      }
+    }
 
+    // Email OTP flow: create user, send OTP via Nodemailer, return otpId
+    if (normalizedEmail) {
+      const user = await User.create({
+        phoneNumber,
+        email: normalizedEmail,
+        name,
+        password,
+        location: location || {},
+        emailVerified: false,
+        verificationStatus: 'unverified',
+      });
+      const result = await otpService.generateAndSendOTP(
+        user._id,
+        normalizedEmail,
+        'registration',
+        name
+      );
+      if (!result.success) {
+        await User.findByIdAndDelete(user._id);
+        throw new ApiError(500, result.message || 'Failed to send verification email');
+      }
+      return {
+        otpSent: true,
+        otpId: result.otpId,
+        expiresIn: result.expiresIn,
+        email: normalizedEmail,
+      };
+    }
+
+    // Phone OTP flow (existing)
     await this.generateOTP(phoneNumber);
-
     const userPayload = JSON.stringify({ password, name, location });
     const redis = getRedis();
     if (redis) {
@@ -75,8 +112,34 @@ class AuthService {
       memoryStore.set(`temp:user:${phoneNumber}`, userPayload);
       setTimeout(() => memoryStore.delete(`temp:user:${phoneNumber}`), 3600 * 1000);
     }
-
     return { otpSent: true, phoneNumber };
+  }
+
+  async completeRegistrationWithEmail(otpId, otp) {
+    const verifyResult = await otpService.verifyOTP(otpId, otp);
+    if (!verifyResult.success) {
+      throw new ApiError(400, verifyResult.message, [
+        ...(verifyResult.attemptsRemaining != null
+          ? [{ field: 'attemptsRemaining', message: String(verifyResult.attemptsRemaining) }]
+          : []),
+      ]);
+    }
+    if (verifyResult.type !== 'registration') {
+      throw new ApiError(400, 'Invalid OTP type');
+    }
+    const user = await User.findById(verifyResult.userId);
+    if (!user) {
+      throw new ApiError(404, 'User not found');
+    }
+    user.emailVerified = true;
+    user.verificationStatus = 'verified';
+    await user.save({ validateBeforeSave: false });
+    await otpService.invalidateOTP(otpId);
+    const tokens = this.generateTokens(user._id);
+    await this.saveRefreshToken(user._id, tokens.refreshToken);
+    const userObj = user.toObject();
+    delete userObj.password;
+    return { user: userObj, tokens };
   }
 
   async completeRegistration(phoneNumber, otp) {
@@ -111,8 +174,18 @@ class AuthService {
     };
   }
 
-  async login(phoneNumber, password) {
-    const user = await User.findOne({ phoneNumber }).select('+password');
+  async login(phoneNumber, email, password) {
+    const byPhone = phoneNumber?.trim();
+    const byEmail = email?.trim().toLowerCase();
+    if (!byPhone && !byEmail) {
+      throw new ApiError(400, 'Provide phone number or email');
+    }
+    const query = byPhone && byEmail
+      ? { $or: [{ phoneNumber: byPhone }, { email: byEmail }] }
+      : byPhone
+        ? { phoneNumber: byPhone }
+        : { email: byEmail };
+    const user = await User.findOne(query).select('+password');
 
     if (!user) {
       throw new ApiError(401, 'Invalid credentials');
@@ -217,6 +290,64 @@ class AuthService {
     });
 
     return { success: true };
+  }
+
+  async forgotPasswordEmail(email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      return { success: true, message: 'If this email is registered, you will receive an OTP' };
+    }
+    const result = await otpService.generateAndSendOTP(
+      user._id,
+      user.email,
+      'password_reset',
+      user.name
+    );
+    if (!result.success) {
+      throw new ApiError(500, result.message || 'Failed to send OTP email');
+    }
+    return {
+      success: true,
+      message: 'OTP sent to your registered email',
+      otpId: result.otpId,
+      expiresIn: result.expiresIn,
+    };
+  }
+
+  async resetPasswordWithOTP(otpId, otp, newPassword) {
+    const verifyResult = await otpService.verifyOTP(otpId, otp);
+    if (!verifyResult.success) {
+      throw new ApiError(400, verifyResult.message, [
+        ...(verifyResult.attemptsRemaining != null
+          ? [{ field: 'attemptsRemaining', message: String(verifyResult.attemptsRemaining) }]
+          : []),
+      ]);
+    }
+    if (verifyResult.type !== 'password_reset') {
+      throw new ApiError(400, 'Invalid OTP type');
+    }
+    const user = await User.findById(verifyResult.userId).select('+password');
+    if (!user) {
+      throw new ApiError(404, 'User not found');
+    }
+    user.password = newPassword;
+    user.lastPasswordChangeAt = new Date();
+    await user.save();
+    await otpService.invalidateOTP(otpId);
+    return { success: true, message: 'Password reset successfully' };
+  }
+
+  async resendEmailOTP(otpId) {
+    const result = await otpService.resendOTP(otpId);
+    if (!result.success) {
+      throw new ApiError(400, result.message);
+    }
+    return {
+      success: true,
+      message: result.message,
+      expiresIn: result.expiresIn,
+    };
   }
 }
 
