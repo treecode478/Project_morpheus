@@ -107,9 +107,27 @@ const userSchema = new mongoose.Schema(
       followersCount: { type: Number, default: 0 },
       followingCount: { type: Number, default: 0 },
       postsCount: { type: Number, default: 0 },
+      likesCount: { type: Number, default: 0 },
       questionsAsked: { type: Number, default: 0 },
       answersGiven: { type: Number, default: 0 },
     },
+
+    background: {
+      url: String,
+      publicId: String,
+    },
+    backgroundPreset: {
+      type: String,
+      enum: ['default', 'gradient_teal', 'gradient_blue', 'gradient_purple', 'solid_green', 'gradient_orange', 'gradient_dark', 'custom'],
+      default: 'default',
+    },
+    profileCompleteness: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    lastProfileUpdate: Date,
 
     preferences: {
       language: {
@@ -192,6 +210,16 @@ userSchema.pre('save', async function (next) {
 
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
+};
+
+userSchema.methods.computeProfileCompleteness = function () {
+  let score = 0;
+  if (this.name && this.name.trim().length > 0) score += 25;
+  if (this.avatar?.url) score += 25;
+  if (this.bio && this.bio.trim().length > 0) score += 25;
+  if (this.background?.url || (this.backgroundPreset && this.backgroundPreset !== 'default')) score += 25;
+  this.profileCompleteness = Math.min(100, score);
+  return this.profileCompleteness;
 };
 
 module.exports = mongoose.model('User', userSchema);

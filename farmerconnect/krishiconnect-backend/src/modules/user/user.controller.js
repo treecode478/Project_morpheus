@@ -1,5 +1,6 @@
 const userService = require('./user.service');
 const ApiResponse = require('../../utils/ApiResponse');
+const ApiError = require('../../utils/ApiError');
 const asyncHandler = require('../../utils/asyncHandler');
 
 const getMe = asyncHandler(async (req, res) => {
@@ -15,7 +16,38 @@ const updateMe = asyncHandler(async (req, res) => {
 const uploadAvatar = asyncHandler(async (req, res) => {
   const avatarData = req.uploadResult;
   const user = await userService.updateAvatar(req.user._id, avatarData);
-  res.status(200).json(new ApiResponse(200, user, 'Avatar updated successfully'));
+  res.status(200).json(new ApiResponse(200, user, 'Profile picture updated successfully'));
+});
+
+const removeAvatar = asyncHandler(async (req, res) => {
+  const user = await userService.removeAvatar(req.user._id);
+  res.status(200).json(new ApiResponse(200, user, 'Profile picture removed'));
+});
+
+const updateBio = asyncHandler(async (req, res) => {
+  const { bio } = req.body;
+  const user = await userService.updateBio(req.user._id, bio);
+  res.status(200).json(new ApiResponse(200, user, 'Bio updated successfully'));
+});
+
+const clearBio = asyncHandler(async (req, res) => {
+  const user = await userService.clearBio(req.user._id);
+  res.status(200).json(new ApiResponse(200, user, 'Bio cleared'));
+});
+
+const updateBackground = asyncHandler(async (req, res) => {
+  const preset = req.body?.preset;
+  const backgroundData = req.uploadResult;
+  if (!preset && !backgroundData) {
+    throw new ApiError(400, 'Either preset or background image is required');
+  }
+  const user = await userService.updateBackground(req.user._id, { preset, backgroundData });
+  res.status(200).json(new ApiResponse(200, user, backgroundData ? 'Background updated successfully' : 'Background preset applied'));
+});
+
+const getBackgroundPresets = asyncHandler(async (req, res) => {
+  const result = userService.getBackgroundPresets();
+  res.status(200).json(new ApiResponse(200, { presets: result.presets }, 'Background presets fetched'));
 });
 
 const getUserById = asyncHandler(async (req, res) => {
@@ -64,6 +96,11 @@ module.exports = {
   getMe,
   updateMe,
   uploadAvatar,
+  removeAvatar,
+  updateBio,
+  clearBio,
+  updateBackground,
+  getBackgroundPresets,
   getUserById,
   searchUsers,
   followUser,

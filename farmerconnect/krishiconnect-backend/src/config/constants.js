@@ -4,6 +4,8 @@ module.exports = {
   JWT_ACCESS_EXPIRY: process.env.JWT_EXPIRES_IN || '7d',
   JWT_REFRESH_EXPIRY: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   MAX_FILE_SIZE: 20 * 1024 * 1024, // 20MB
+  PROFILE_PIC_MAX_SIZE: 5 * 1024 * 1024, // 5MB for avatar/profile picture
+  BACKGROUND_MAX_SIZE: 10 * 1024 * 1024, // 10MB for background image
   MAX_FILES: 10,
   PAGINATION_DEFAULT_LIMIT: 20,
   CACHE_DURATION: 300, // 5 minutes

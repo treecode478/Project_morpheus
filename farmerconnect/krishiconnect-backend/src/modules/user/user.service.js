@@ -65,8 +65,102 @@ const updateAvatar = async (userId, avatarData) => {
   }
 
   user.avatar = avatarData;
+  user.lastProfileUpdate = new Date();
+  user.computeProfileCompleteness();
   await user.save();
 
+  return user;
+};
+
+const removeAvatar = async (userId) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new ApiError(404, 'User not found');
+  }
+  if (user.avatar?.publicId) {
+    await deleteFromCloudinary(user.avatar.publicId);
+  }
+  user.avatar = undefined;
+  user.lastProfileUpdate = new Date();
+  user.computeProfileCompleteness();
+  await user.save();
+  return user;
+};
+
+const updateBio = async (userId, bio) => {
+  if (typeof bio !== 'string') {
+    throw new ApiError(400, 'Bio is required');
+  }
+  if (bio.length > 500) {
+    throw new ApiError(400, 'Bio cannot exceed 500 characters');
+  }
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { bio: bio.trim() || null, lastProfileUpdate: new Date() },
+    { new: true, runValidators: true }
+  ).select('-password -refreshTokens -fcmTokens');
+  if (!user) throw new ApiError(404, 'User not found');
+  user.computeProfileCompleteness();
+  await user.save();
+  return user;
+};
+
+const clearBio = async (userId) => {
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { bio: null, lastProfileUpdate: new Date() },
+    { new: true }
+  ).select('-password -refreshTokens -fcmTokens');
+  if (!user) throw new ApiError(404, 'User not found');
+  user.computeProfileCompleteness();
+  await user.save();
+  return user;
+};
+
+const BACKGROUND_PRESETS = [
+  { id: 'default', name: 'Default Green', color: '#16a34a', type: 'solid' },
+  { id: 'gradient_teal', name: 'Teal Gradient', colors: ['#16a34a', '#6ee7b7'], type: 'gradient' },
+  { id: 'gradient_blue', name: 'Blue Gradient', colors: ['#0ea5e9', '#06b6d4'], type: 'gradient' },
+  { id: 'gradient_purple', name: 'Purple Gradient', colors: ['#9333ea', '#db2777'], type: 'gradient' },
+  { id: 'gradient_orange', name: 'Orange Gradient', colors: ['#ea580c', '#f97316'], type: 'gradient' },
+  { id: 'gradient_dark', name: 'Dark Gradient', colors: ['#1f2937', '#374151'], type: 'gradient' },
+  { id: 'solid_green', name: 'Solid Green', color: '#16a34a', type: 'solid' },
+  { id: 'custom', name: 'Custom', type: 'custom' },
+];
+
+const getBackgroundPresets = () => ({
+  success: true,
+  presets: BACKGROUND_PRESETS,
+});
+
+const updateBackground = async (userId, options = {}) => {
+  const { preset, backgroundData } = options;
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, 'User not found');
+
+  if (backgroundData) {
+    if (user.background?.publicId) {
+      await deleteFromCloudinary(user.background.publicId);
+    }
+    user.background = backgroundData;
+    user.backgroundPreset = 'custom';
+  } else if (preset) {
+    const validPreset = BACKGROUND_PRESETS.some((p) => p.id === preset);
+    if (!validPreset) {
+      throw new ApiError(400, 'Invalid preset name');
+    }
+    if (user.background?.publicId) {
+      await deleteFromCloudinary(user.background.publicId);
+    }
+    user.background = undefined;
+    user.backgroundPreset = preset;
+  } else {
+    throw new ApiError(400, 'Either preset or file is required');
+  }
+
+  user.lastProfileUpdate = new Date();
+  user.computeProfileCompleteness();
+  await user.save();
   return user;
 };
 
@@ -167,6 +261,11 @@ module.exports = {
   getProfile,
   updateProfile,
   updateAvatar,
+  removeAvatar,
+  updateBio,
+  clearBio,
+  updateBackground,
+  getBackgroundPresets,
   searchUsers,
   followUser,
   unfollowUser,

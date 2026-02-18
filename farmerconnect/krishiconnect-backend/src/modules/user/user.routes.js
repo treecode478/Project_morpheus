@@ -2,8 +2,12 @@ const express = require('express');
 const router = express.Router();
 const userController = require('./user.controller');
 const { authenticate } = require('../../middlewares/auth.middleware');
-const { uploadSingle } = require('../../middlewares/upload.middleware');
+const { uploadSingleProfilePic, uploadSingleBackground } = require('../../middlewares/upload.middleware');
 const { uploadToCloudinary } = require('../../utils/uploadToCloudinary');
+const ApiError = require('../../utils/ApiError');
+
+// Public route: background presets (no auth required)
+router.get('/profile/backgrounds', userController.getBackgroundPresets);
 
 router.use(authenticate);
 
@@ -12,7 +16,7 @@ router.patch('/me', userController.updateMe);
 
 router.post(
   '/me/avatar',
-  uploadSingle('avatar'),
+  uploadSingleProfilePic('avatar'),
   async (req, res, next) => {
     if (req.file) {
       try {
@@ -22,10 +26,39 @@ router.post(
       } catch (err) {
         return next(err);
       }
+    } else {
+      return next(new ApiError(400, 'No file uploaded'));
     }
     next();
   },
   userController.uploadAvatar
+);
+router.delete('/me/avatar', userController.removeAvatar);
+
+router.put('/me/bio', userController.updateBio);
+router.delete('/me/bio', userController.clearBio);
+
+router.post(
+  '/me/background',
+  (req, res, next) => {
+    if (req.is('multipart/form-data')) {
+      return uploadSingleBackground('background')(req, res, (err) => {
+        if (err) return next(err);
+        if (req.file) {
+          uploadToCloudinary(req.file.buffer, { folder: 'krishiconnect/backgrounds' })
+            .then((result) => {
+              req.uploadResult = result;
+              next();
+            })
+            .catch(next);
+        } else {
+          next();
+        }
+      });
+    }
+    next();
+  },
+  userController.updateBackground
 );
 
 router.get('/search', userController.searchUsers);
